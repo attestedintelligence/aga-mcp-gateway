@@ -1,5 +1,5 @@
 // AGA MCP Gateway - Cryptographic Governance Receipts
-// Reference implementation for MCP governance receipts
+// Reference implementation for MCP SEP-XXXX
 // Patent: USPTO App. No. 19/433,835
 // Copyright (c) 2026 Attested Intelligence Holdings LLC
 // SPDX-License-Identifier: Apache-2.0
@@ -7,9 +7,9 @@
 import { describe, it, expect } from 'vitest';
 import { composeBundle } from '../src/bundle/compose.js';
 import { verifyBundle } from '../src/bundle/verify.js';
-import type { GovernanceReceipt } from '../src/receipt/types.js';
-import type { EvidenceBundle } from '../src/bundle/types.js';
-import { generateReceipt, computeArgumentsHash } from '../src/receipt/generate.js';
+import type { GovernanceReceipt } from '../src/receipt/model.js';
+import { generateReceipt } from '../src/receipt/generator.js';
+import { computeReceiptHash } from '../src/receipt/chain.js';
 import { hexToBytes, bytesToHex } from '../src/crypto/sha256.js';
 import { getPublicKey } from '../src/crypto/ed25519.js';
 
@@ -24,25 +24,19 @@ async function generateReceiptChain(count: number): Promise<GovernanceReceipt[]>
   let previousHash = '';
 
   for (let i = 0; i < count; i++) {
-    const argsHash = await computeArgumentsHash({ index: i });
     const receipt = await generateReceipt({
-      gatewayId: 'test-gateway',
       toolName: `tool_${i}`,
-      argumentsHash: argsHash,
-      decision: {
-        allowed: i % 2 === 0,
-        reason: i % 2 === 0 ? 'permitted by policy' : 'denied by policy',
-        tool_name: `tool_${i}`,
-        policy_mode: 'allowlist',
-      },
-      policyHash: 'cafe'.repeat(16),
+      decision: i % 2 === 0 ? 'PERMITTED' : 'DENIED',
+      reason: i % 2 === 0 ? 'permitted by policy' : 'denied by policy',
       requestId: `req-${i}`,
+      arguments: { index: i },
+      policyReference: 'cafe'.repeat(16),
       previousReceiptHash: previousHash,
-      sequenceNumber: i,
-      seed: TEST_SEED,
+      gatewayId: 'test-gateway',
+      signingKeySeed: TEST_SEED,
     });
 
-    previousHash = receipt.receipt_hash;
+    previousHash = await computeReceiptHash(receipt);
     receipts.push(receipt);
   }
 
@@ -93,9 +87,6 @@ describe('Bundle Compose and Verify', () => {
 
     const bundle = await composeBundle(receipts, 'test-gateway', publicKeyHex, 'policy-ref');
 
-    // Tamper with chain link (modify previous_receipt_hash without changing receipt_hash)
-    // This will also cause signature to fail, but chain integrity check is independent
-    // We need to tamper chain in a way that receipt_hash still validates but chain breaks
     // Swap receipt order to break chain
     const temp = bundle.receipts[1];
     bundle.receipts[1] = bundle.receipts[2];

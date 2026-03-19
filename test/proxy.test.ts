@@ -1,5 +1,5 @@
 // AGA MCP Gateway - Cryptographic Governance Receipts
-// Reference implementation for MCP governance receipts
+// Reference implementation for MCP SEP-XXXX
 // Patent: USPTO App. No. 19/433,835
 // Copyright (c) 2026 Attested Intelligence Holdings LLC
 // SPDX-License-Identifier: Apache-2.0
@@ -138,7 +138,6 @@ describe('Proxy Handler', () => {
     expect(resp.status).toBe(200);
 
     const result = await resp.json();
-    // Should be the echoed request (no receipt wrapping)
     expect(result.method).toBe('initialize');
     expect(result['x-aga-receipt']).toBeUndefined();
   });
@@ -227,12 +226,13 @@ describe('Proxy Handler', () => {
     const receipt = result['x-aga-receipt'];
 
     expect(receipt).toBeDefined();
-    expect(receipt.receipt_hash).toBeDefined();
     expect(receipt.signature).toBeDefined();
     expect(receipt.public_key).toBeDefined();
     expect(receipt.gateway_id).toBe('test-gateway');
     expect(receipt.decision).toBe('DENIED');
     expect(receipt.tool_name).toBe('dangerous_tool');
+    expect(receipt.algorithm).toBe('Ed25519-SHA256-JCS');
+    expect(receipt.method).toBe('tools/call');
   });
 
   it('should chain receipts with previous_receipt_hash', async () => {
@@ -260,6 +260,5 @@ describe('Proxy Handler', () => {
 
     // Second receipt should reference the first
     expect(receipt2.previous_receipt_hash).not.toBe('');
-    expect(receipt2.sequence_number).toBe(1);
   });
 });

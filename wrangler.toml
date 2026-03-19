@@ -1,0 +1,18 @@
+name = "aga-mcp-gateway"
+main = "src/index.ts"
+compatibility_date = "2026-03-15"
+
+[vars]
+GATEWAY_ID = "aga-demo-001"
+
+[[durable_objects.bindings]]
+name = "RECEIPT_CHAIN"
+class_name = "ReceiptChainDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ReceiptChainDO"]
+
+[[r2_buckets]]
+binding = "BUNDLES"
+bucket_name = "aga-evidence-bundles"

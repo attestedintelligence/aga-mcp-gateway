@@ -1,12 +1,11 @@
 // AGA MCP Gateway - Cryptographic Governance Receipts
-// Reference implementation for MCP governance receipts
+// Reference implementation for MCP SEP-XXXX
 // Patent: USPTO App. No. 19/433,835
 // Copyright (c) 2026 Attested Intelligence Holdings LLC
 // SPDX-License-Identifier: Apache-2.0
 
-import type { GovernanceReceipt } from '../receipt/types.js';
-import { sha256Hex } from '../crypto/sha256.js';
-import { canonicalize } from '../crypto/canonicalize.js';
+import type { GovernanceReceipt } from '../receipt/model.js';
+import { computeReceiptHash } from '../receipt/chain.js';
 
 /**
  * In-memory receipt chain for testing and local development.
@@ -18,13 +17,21 @@ export class MemoryReceiptChain {
 
   /**
    * Append a receipt to the chain.
-   * Returns the sequence number and the hash of the appended receipt.
+   * Computes chain hash as SHA-256(canonicalize(receipt WITH signature))
+   * per directive Section 3.3.
+   *
+   * Returns conflict: true if previous_receipt_hash does not match head.
    */
-  async append(receipt: GovernanceReceipt): Promise<{ sequence: number; receiptHash: string }> {
+  async append(receipt: GovernanceReceipt): Promise<{ sequence: number; receiptHash: string; conflict?: boolean }> {
+    // Verify chain linkage
+    if (receipt.previous_receipt_hash !== this.headHash) {
+      return { sequence: -1, receiptHash: this.headHash, conflict: true };
+    }
+
     const sequence = this.receipts.length;
     this.receipts.push(receipt);
-    this.headHash = receipt.receipt_hash;
-    return { sequence, receiptHash: receipt.receipt_hash };
+    this.headHash = await computeReceiptHash(receipt);
+    return { sequence, receiptHash: this.headHash };
   }
 
   /**

@@ -1,23 +1,23 @@
 // AGA MCP Gateway - Cryptographic Governance Receipts
-// Reference implementation for MCP governance receipts
+// Reference implementation for MCP SEP-XXXX
 // Patent: USPTO App. No. 19/433,835
 // Copyright (c) 2026 Attested Intelligence Holdings LLC
 // SPDX-License-Identifier: Apache-2.0
 
-import type { GovernanceReceipt } from '../receipt/types.js';
+import type { GovernanceReceipt } from '../receipt/model.js';
 import type { EvidenceBundle, MerkleProof } from './types.js';
-import { merkleRoot, merkleNodeHash } from '../crypto/merkle.js';
+import { merkleRoot, merkleNodeHash } from '../bundle/merkle.js';
 import { sha256Hex } from '../crypto/sha256.js';
-import { canonicalize } from '../crypto/canonicalize.js';
+import { canonicalizeBytes } from '../crypto/canonicalize.js';
 
 const ALGORITHM = 'Ed25519-SHA256-JCS';
 
 /**
- * Compute the leaf hash for a receipt: SHA-256 of its receipt_hash field
- * encoded as UTF-8 bytes.
+ * Compute the leaf hash for a receipt:
+ * SHA-256(canonicalize(receipt)) where receipt includes the signature field.
  */
 async function receiptLeafHash(receipt: GovernanceReceipt): Promise<string> {
-  return sha256Hex(new TextEncoder().encode(receipt.receipt_hash));
+  return sha256Hex(canonicalizeBytes(receipt));
 }
 
 /**
@@ -100,14 +100,11 @@ export async function composeBundle(
     leafHashes.map((_, i) => generateMerkleProof(leafHashes, i)),
   );
 
-  const bundleId = `bundle-${Date.now()}`;
-  const generatedAt = new Date().toISOString().replace(/\.000Z$/, 'Z');
-
   return {
     schema_version: '1.0',
-    bundle_id: bundleId,
+    bundle_id: crypto.randomUUID(),
     algorithm: ALGORITHM,
-    generated_at: generatedAt,
+    generated_at: new Date().toISOString(),
     gateway_id: gatewayId,
     public_key: publicKeyHex,
     policy_reference: policyReference,

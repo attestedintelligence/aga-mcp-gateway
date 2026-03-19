@@ -1,16 +1,13 @@
 // AGA MCP Gateway - Cryptographic Governance Receipts
-// Reference implementation for MCP governance receipts
+// Reference implementation for MCP SEP-XXXX
 // Patent: USPTO App. No. 19/433,835
 // Copyright (c) 2026 Attested Intelligence Holdings LLC
 // SPDX-License-Identifier: Apache-2.0
 
 import type { ToolPolicy } from '../governance/types.js';
-import type { GovernanceReceipt } from '../receipt/types.js';
+import type { GovernanceReceipt } from '../receipt/model.js';
 import { evaluate } from '../governance/policy.js';
-import { generateReceipt, computeArgumentsHash } from '../receipt/generate.js';
-import { sha256Hex } from '../crypto/sha256.js';
-import { hexToBytes } from '../crypto/sha256.js';
-import { canonicalize } from '../crypto/canonicalize.js';
+import { generateReceipt } from '../receipt/generator.js';
 import { MemoryReceiptChain } from '../storage/memory-chain.js';
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1 MB
@@ -96,53 +93,81 @@ export async function handleMCPRequest(
   const toolName = params?.name as string | undefined;
 
   if (!toolName) {
-    const decision = {
-      allowed: false,
-      reason: 'fail-closed: missing tool name',
-      tool_name: 'UNKNOWN',
-      policy_mode: config.policy.mode,
-    };
-
-    const head = await config.receiptChain.getHead();
-    const receipt = await generateReceipt({
-      gatewayId: config.gatewayId,
+    let head = await config.receiptChain.getHead();
+    let receipt = await generateReceipt({
       toolName: 'UNKNOWN',
-      argumentsHash: await computeArgumentsHash(null),
-      decision,
-      policyHash: config.policyHash,
-      requestId: String(requestId ?? ''),
+      decision: 'DENIED',
+      reason: 'tool name extraction failed, fail-closed',
+      requestId,
+      policyReference: config.policyHash,
       previousReceiptHash: head.headHash,
-      sequenceNumber: head.length,
-      seed: config.seed,
+      gatewayId: config.gatewayId,
+      signingKeySeed: config.seed,
     });
-    await config.receiptChain.append(receipt);
+
+    // Append to chain with single retry on conflict
+    let appendResult = await config.receiptChain.append(receipt);
+    if (appendResult.conflict) {
+      head = await config.receiptChain.getHead();
+      receipt = await generateReceipt({
+        toolName: 'UNKNOWN',
+        decision: 'DENIED',
+        reason: 'tool name extraction failed, fail-closed',
+        requestId,
+        policyReference: config.policyHash,
+        previousReceiptHash: head.headHash,
+        gatewayId: config.gatewayId,
+        signingKeySeed: config.seed,
+      });
+      appendResult = await config.receiptChain.append(receipt);
+      if (appendResult.conflict) {
+        return new Response('Service Unavailable: chain contention', { status: 503 });
+      }
+    }
 
     return jsonRpcError(requestId, -32600, 'Missing tool name', receipt);
   }
 
   // Step 7: Extract arguments
-  const args = (params?.arguments as Record<string, unknown>) ?? null;
-
-  // Step 8: Compute arguments_hash
-  const argumentsHash = await computeArgumentsHash(args);
+  const args = params?.arguments as Record<string, unknown> | undefined;
 
   // Step 9: Evaluate policy
-  const decision = evaluate(config.policy, toolName, args ?? undefined);
+  const decision = evaluate(config.policy, toolName, args);
 
   // Step 10: Generate signed receipt
-  const head = await config.receiptChain.getHead();
-  const receipt = await generateReceipt({
-    gatewayId: config.gatewayId,
+  let head = await config.receiptChain.getHead();
+  let receipt = await generateReceipt({
     toolName,
-    argumentsHash,
-    decision,
-    policyHash: config.policyHash,
-    requestId: String(requestId ?? ''),
+    decision: decision.allowed ? 'PERMITTED' : 'DENIED',
+    reason: decision.reason,
+    requestId,
+    arguments: args,
+    policyReference: config.policyHash,
     previousReceiptHash: head.headHash,
-    sequenceNumber: head.length,
-    seed: config.seed,
+    gatewayId: config.gatewayId,
+    signingKeySeed: config.seed,
   });
-  await config.receiptChain.append(receipt);
+
+  // Append to chain with single retry on conflict
+  let appendResult = await config.receiptChain.append(receipt);
+  if (appendResult.conflict) {
+    head = await config.receiptChain.getHead();
+    receipt = await generateReceipt({
+      toolName,
+      decision: decision.allowed ? 'PERMITTED' : 'DENIED',
+      reason: decision.reason,
+      requestId,
+      arguments: args,
+      policyReference: config.policyHash,
+      previousReceiptHash: head.headHash,
+      gatewayId: config.gatewayId,
+      signingKeySeed: config.seed,
+    });
+    appendResult = await config.receiptChain.append(receipt);
+    if (appendResult.conflict) {
+      return new Response('Service Unavailable: chain contention', { status: 503 });
+    }
+  }
 
   // Step 11: PERMITTED -> forward; DENIED -> error
   if (decision.allowed) {

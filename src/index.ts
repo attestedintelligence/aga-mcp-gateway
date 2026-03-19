@@ -1,5 +1,5 @@
 // AGA MCP Gateway - Cryptographic Governance Receipts
-// Reference implementation for MCP governance receipts
+// Reference implementation for MCP SEP-XXXX
 // Patent: USPTO App. No. 19/433,835
 // Copyright (c) 2026 Attested Intelligence Holdings LLC
 // SPDX-License-Identifier: Apache-2.0
@@ -13,6 +13,8 @@ import { composeBundle } from './bundle/compose.js';
 import { verifyBundle } from './bundle/verify.js';
 import { getPublicKey } from './crypto/ed25519.js';
 import { bytesToHex } from './crypto/sha256.js';
+
+export { ReceiptChainDO } from './storage/durable-chain.js';
 
 // Shared in-memory receipt chain (per-isolate, not persistent)
 const receiptChain = new MemoryReceiptChain();

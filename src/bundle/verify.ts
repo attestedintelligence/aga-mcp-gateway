@@ -1,15 +1,15 @@
 // AGA MCP Gateway - Cryptographic Governance Receipts
-// Reference implementation for MCP governance receipts
+// Reference implementation for MCP SEP-XXXX
 // Patent: USPTO App. No. 19/433,835
 // Copyright (c) 2026 Attested Intelligence Holdings LLC
 // SPDX-License-Identifier: Apache-2.0
 
 import type { EvidenceBundle, VerificationResult } from './types.js';
-import type { GovernanceReceipt } from '../receipt/types.js';
+import type { GovernanceReceipt } from '../receipt/model.js';
 import { verify as ed25519Verify } from '../crypto/ed25519.js';
 import { sha256Hex, hexToBytes } from '../crypto/sha256.js';
-import { canonicalize } from '../crypto/canonicalize.js';
-import { merkleNodeHash } from '../crypto/merkle.js';
+import { canonicalizeBytes } from '../crypto/canonicalize.js';
+import { merkleNodeHash } from '../bundle/merkle.js';
 
 const SUPPORTED_ALGORITHMS = ['Ed25519-SHA256-JCS'];
 
@@ -31,70 +31,55 @@ function constantTimeEqual(a: string, b: string): boolean {
  * Fail closed on unknown algorithms.
  */
 function checkAlgorithm(bundle: EvidenceBundle): boolean {
-  return SUPPORTED_ALGORITHMS.includes(bundle.algorithm);
+  if (!SUPPORTED_ALGORITHMS.includes(bundle.algorithm)) {
+    return false;
+  }
+  // Also check every receipt's algorithm
+  for (const receipt of bundle.receipts) {
+    if (receipt.algorithm !== 'Ed25519-SHA256-JCS') {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
  * Step 2: Verify all receipt signatures.
- * Re-computes receipt_hash from the pre-hash fields and verifies
- * the Ed25519 signature against the public key in the bundle.
+ * For each receipt: remove signature, canonicalize, Ed25519 verify.
  */
 async function checkReceiptSignatures(bundle: EvidenceBundle): Promise<boolean> {
-  const publicKeyBytes = hexToBytes(bundle.public_key);
-
   for (const receipt of bundle.receipts) {
-    // Reconstruct the pre-hash object (everything except receipt_hash and signature)
-    const preHash: Record<string, unknown> = {
-      schema_version: receipt.schema_version,
-      receipt_id: receipt.receipt_id,
-      gateway_id: receipt.gateway_id,
-      timestamp: receipt.timestamp,
-      sequence_number: receipt.sequence_number,
-      tool_name: receipt.tool_name,
-      arguments_hash: receipt.arguments_hash,
-      decision: receipt.decision,
-      reason: receipt.reason,
-      policy_hash: receipt.policy_hash,
-      request_id: receipt.request_id,
-      previous_receipt_hash: receipt.previous_receipt_hash,
-      public_key: receipt.public_key,
-    };
-
-    // Verify receipt_hash
-    const canonical = canonicalize(preHash);
-    const computedHash = await sha256Hex(new TextEncoder().encode(canonical));
-    if (!constantTimeEqual(computedHash, receipt.receipt_hash)) {
-      return false;
-    }
-
-    // Verify signature over receipt_hash
-    const sigBytes = hexToBytes(receipt.signature);
-    const msgBytes = new TextEncoder().encode(receipt.receipt_hash);
-    const valid = await ed25519Verify(publicKeyBytes, msgBytes, sigBytes);
+    const { signature, ...receiptWithoutSig } = receipt;
+    const canonical = canonicalizeBytes(receiptWithoutSig);
+    const sigBytes = hexToBytes(signature);
+    const pubBytes = hexToBytes(receipt.public_key);
+    const valid = await ed25519Verify(pubBytes, canonical, sigBytes);
     if (!valid) {
       return false;
     }
   }
-
   return true;
 }
 
 /**
  * Step 3: Verify chain integrity.
- * Each receipt's previous_receipt_hash must match the preceding receipt's receipt_hash.
- * The first receipt should have an empty previous_receipt_hash.
+ * Chain hash = SHA-256(canonicalize(receipt WITH signature)).
+ * receipt[0].previous_receipt_hash === ""
+ * receipt[i].previous_receipt_hash === chainHash(receipt[i-1])
  */
-function checkChainIntegrity(bundle: EvidenceBundle): boolean {
+async function checkChainIntegrity(bundle: EvidenceBundle): Promise<boolean> {
   const receipts = bundle.receipts;
   if (receipts.length === 0) return true;
 
-  // First receipt: previous_receipt_hash should be empty
   if (receipts[0].previous_receipt_hash !== '') {
     return false;
   }
 
   for (let i = 1; i < receipts.length; i++) {
-    if (!constantTimeEqual(receipts[i].previous_receipt_hash, receipts[i - 1].receipt_hash)) {
+    // Chain hash includes signature
+    const prevCanonical = canonicalizeBytes(receipts[i - 1]);
+    const expectedHash = await sha256Hex(prevCanonical);
+    if (!constantTimeEqual(receipts[i].previous_receipt_hash, expectedHash)) {
       return false;
     }
   }
@@ -104,8 +89,7 @@ function checkChainIntegrity(bundle: EvidenceBundle): boolean {
 
 /**
  * Step 4: Verify Merkle proofs.
- * For each proof, walk from the leaf to the root using the siblings,
- * then compare against the bundle's merkle_root.
+ * Walk each proof from leaf to root. Constant-time compare to bundle root.
  */
 async function checkMerkleProofs(bundle: EvidenceBundle): Promise<boolean> {
   for (const proof of bundle.merkle_proofs) {
@@ -126,7 +110,6 @@ async function checkMerkleProofs(bundle: EvidenceBundle): Promise<boolean> {
       return false;
     }
 
-    // Proof's own root should match bundle root
     if (!constantTimeEqual(proof.merkle_root, bundle.merkle_root)) {
       return false;
     }
@@ -137,9 +120,8 @@ async function checkMerkleProofs(bundle: EvidenceBundle): Promise<boolean> {
 
 /**
  * Step 5: Verify bundle consistency.
- * The number of proofs must match the number of receipts,
- * and each proof's leaf_hash must match the SHA-256 of the
- * corresponding receipt's receipt_hash.
+ * Leaf hash = SHA-256(canonicalize(receipt WITH signature)).
+ * Proof count must match receipt count.
  */
 async function checkBundleConsistency(bundle: EvidenceBundle): Promise<boolean> {
   if (bundle.merkle_proofs.length !== bundle.receipts.length) {
@@ -147,10 +129,8 @@ async function checkBundleConsistency(bundle: EvidenceBundle): Promise<boolean> 
   }
 
   for (let i = 0; i < bundle.receipts.length; i++) {
-    const expectedLeaf = await sha256Hex(
-      new TextEncoder().encode(bundle.receipts[i].receipt_hash),
-    );
-    if (!constantTimeEqual(bundle.merkle_proofs[i].leaf_hash, expectedLeaf)) {
+    const leafHash = await sha256Hex(canonicalizeBytes(bundle.receipts[i]));
+    if (!constantTimeEqual(bundle.merkle_proofs[i].leaf_hash, leafHash)) {
       return false;
     }
     if (bundle.merkle_proofs[i].leaf_index !== i) {
@@ -193,7 +173,12 @@ export async function verifyBundle(bundle: EvidenceBundle): Promise<Verification
   }
 
   // Step 3: Chain integrity
-  result.chain_integrity_valid = checkChainIntegrity(bundle);
+  try {
+    result.chain_integrity_valid = await checkChainIntegrity(bundle);
+  } catch (e) {
+    result.error = `chain integrity error: ${e}`;
+    return result;
+  }
 
   // Step 4: Merkle proofs
   try {

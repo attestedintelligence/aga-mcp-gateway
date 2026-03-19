@@ -1,5 +1,5 @@
 // AGA MCP Gateway - Cryptographic Governance Receipts
-// Reference implementation for MCP governance receipts
+// Reference implementation for MCP SEP-XXXX
 // Patent: USPTO App. No. 19/433,835
 // Copyright (c) 2026 Attested Intelligence Holdings LLC
 // SPDX-License-Identifier: Apache-2.0
@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { sha256Fields, sha256Hex, hexToBytes } from '../src/crypto/sha256.js';
 import { normalizeTimestamp } from '../src/crypto/timestamp.js';
-import { merkleRoot, merkleNodeHash } from '../src/crypto/merkle.js';
+import { merkleRoot, merkleNodeHash } from '../src/bundle/merkle.js';
 import vectors from './vectors/aga_test_vectors.json';
 
 /**

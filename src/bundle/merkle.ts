@@ -1,10 +1,10 @@
 // AGA MCP Gateway - Cryptographic Governance Receipts
-// Reference implementation for MCP governance receipts
+// Reference implementation for MCP SEP-XXXX
 // Patent: USPTO App. No. 19/433,835
 // Copyright (c) 2026 Attested Intelligence Holdings LLC
 // SPDX-License-Identifier: Apache-2.0
 
-import { sha256Hex, hexToBytes } from './sha256.js';
+import { sha256Hex, hexToBytes } from '../crypto/sha256.js';
 
 /**
  * Compute the SHA-256 hash of two concatenated 32-byte hash values.
