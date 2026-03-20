@@ -11,4 +11,5 @@ export interface Env {
   SIGNING_KEY_SEED: string;
   RECEIPT_CHAIN: DurableObjectNamespace;
   BUNDLES: R2Bucket;
+  UPSTREAM_SERVICE?: Fetcher;
 }

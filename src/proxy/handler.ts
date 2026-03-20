@@ -19,6 +19,7 @@ export interface GatewayConfig {
   policyHash: string;
   seed: Uint8Array;
   receiptChain: MemoryReceiptChain;
+  upstreamService?: Fetcher;
 }
 
 /**
@@ -85,7 +86,7 @@ export async function handleMCPRequest(
 
   // Step 5: Non-tools/call methods: forward transparently
   if (method !== 'tools/call') {
-    return forwardToUpstream(config.upstreamUrl, requestBody);
+    return forwardToUpstream(config.upstreamUrl, requestBody, config.upstreamService);
   }
 
   // Step 6: tools/call with missing params.name: deny fail-closed
@@ -171,7 +172,7 @@ export async function handleMCPRequest(
 
   // Step 11: PERMITTED -> forward; DENIED -> error
   if (decision.allowed) {
-    const upstream = await forwardToUpstream(config.upstreamUrl, requestBody);
+    const upstream = await forwardToUpstream(config.upstreamUrl, requestBody, config.upstreamService);
     return upstream;
   }
 
@@ -180,13 +181,27 @@ export async function handleMCPRequest(
 
 /**
  * Forward a request to the upstream MCP server.
+ * Uses service binding if available (avoids Cloudflare error 1042),
+ * falls back to fetch with UPSTREAM_URL.
  */
-async function forwardToUpstream(upstreamUrl: string, body: string): Promise<Response> {
-  const upstreamResp = await fetch(upstreamUrl, {
+async function forwardToUpstream(
+  upstreamUrl: string,
+  body: string,
+  upstreamService?: Fetcher,
+): Promise<Response> {
+  const init: RequestInit = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body,
-  });
+  };
+
+  let upstreamResp: Response;
+  if (upstreamService) {
+    upstreamResp = await upstreamService.fetch(new Request(upstreamUrl, init));
+  } else {
+    upstreamResp = await fetch(upstreamUrl, init);
+  }
+
   return new Response(upstreamResp.body, {
     status: upstreamResp.status,
     headers: upstreamResp.headers,

@@ -34,6 +34,7 @@ async function buildConfig(env: Env): Promise<GatewayConfig> {
     policyHash,
     seed,
     receiptChain,
+    upstreamService: env.UPSTREAM_SERVICE,
   };
 }
 

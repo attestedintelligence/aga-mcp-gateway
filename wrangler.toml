@@ -11,8 +11,12 @@ class_name = "ReceiptChainDO"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["ReceiptChainDO"]
+new_sqlite_classes = [ "ReceiptChainDO" ]
 
 [[r2_buckets]]
 binding = "BUNDLES"
 bucket_name = "aga-evidence-bundles"
+
+[[services]]
+binding = "UPSTREAM_SERVICE"
+service = "aga-mcp-upstream"
