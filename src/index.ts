@@ -7,7 +7,9 @@
 import type { Env } from './env.js';
 import type { ToolPolicy } from './governance/types.js';
 import { handleMCPRequest, type GatewayConfig } from './proxy/handler.js';
+import { DurableObjectChainClient } from './storage/chain-client.js';
 import { MemoryReceiptChain } from './storage/memory-chain.js';
+import type { ReceiptChain } from './storage/chain-client.js';
 import { sha256Hex, hexToBytes } from './crypto/sha256.js';
 import { composeBundle } from './bundle/compose.js';
 import { verifyBundle } from './bundle/verify.js';
@@ -16,8 +18,17 @@ import { bytesToHex } from './crypto/sha256.js';
 
 export { ReceiptChainDO } from './storage/durable-chain.js';
 
-// Shared in-memory receipt chain (per-isolate, not persistent)
-const receiptChain = new MemoryReceiptChain();
+/**
+ * Get the receipt chain client. Uses Durable Object if available,
+ * falls back to in-memory for local dev without DO bindings.
+ */
+function getChainClient(env: Env): ReceiptChain {
+  if (env.RECEIPT_CHAIN) {
+    return new DurableObjectChainClient(env.RECEIPT_CHAIN, env.GATEWAY_ID);
+  }
+  // Fallback for local dev without DO binding
+  return new MemoryReceiptChain();
+}
 
 /**
  * Build a GatewayConfig from Cloudflare Worker env bindings.
@@ -33,16 +44,17 @@ async function buildConfig(env: Env): Promise<GatewayConfig> {
     policy,
     policyHash,
     seed,
-    receiptChain,
+    receiptChain: getChainClient(env),
     upstreamService: env.UPSTREAM_SERVICE,
   };
 }
 
 /**
- * Handle GET /receipts: return all receipts from the in-memory chain.
+ * Handle GET /receipts: return all receipts from the DO chain.
  */
-async function handleGetReceipts(): Promise<Response> {
-  const receipts = await receiptChain.getReceipts();
+async function handleGetReceipts(env: Env): Promise<Response> {
+  const chain = getChainClient(env);
+  const receipts = await chain.getReceipts();
   return new Response(JSON.stringify({ receipts, count: receipts.length }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
@@ -53,7 +65,8 @@ async function handleGetReceipts(): Promise<Response> {
  * Handle GET /bundle: compose and return an evidence bundle.
  */
 async function handleGetBundle(env: Env): Promise<Response> {
-  const receipts = await receiptChain.getReceipts();
+  const chain = getChainClient(env);
+  const receipts = await chain.getReceipts();
   if (receipts.length === 0) {
     return new Response(JSON.stringify({ error: 'no receipts to bundle' }), {
       status: 404,
@@ -93,10 +106,11 @@ async function handleVerify(request: Request): Promise<Response> {
 }
 
 /**
- * Handle GET /health: basic health check.
+ * Handle GET /health: basic health check with DO chain length.
  */
 async function handleHealth(env: Env): Promise<Response> {
-  const head = await receiptChain.getHead();
+  const chain = getChainClient(env);
+  const head = await chain.getHead();
   return new Response(JSON.stringify({
     status: 'ok',
     gateway_id: env.GATEWAY_ID,
@@ -115,7 +129,7 @@ export default {
       case '/mcp':
         return handleMCPRequest(request, await buildConfig(env));
       case '/receipts':
-        return handleGetReceipts();
+        return handleGetReceipts(env);
       case '/bundle':
         return handleGetBundle(env);
       case '/verify':

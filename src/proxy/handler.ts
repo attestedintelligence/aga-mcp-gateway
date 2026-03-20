@@ -6,9 +6,9 @@
 
 import type { ToolPolicy } from '../governance/types.js';
 import type { GovernanceReceipt } from '../receipt/model.js';
+import type { ReceiptChain } from '../storage/chain-client.js';
 import { evaluate } from '../governance/policy.js';
 import { generateReceipt } from '../receipt/generator.js';
-import { MemoryReceiptChain } from '../storage/memory-chain.js';
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1 MB
 
@@ -18,7 +18,7 @@ export interface GatewayConfig {
   policy: ToolPolicy;
   policyHash: string;
   seed: Uint8Array;
-  receiptChain: MemoryReceiptChain;
+  receiptChain: ReceiptChain;
   upstreamService?: Fetcher;
 }
 

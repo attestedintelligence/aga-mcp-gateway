@@ -5,13 +5,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { GovernanceReceipt } from '../receipt/model.js';
+import type { ReceiptChain } from './chain-client.js';
 import { computeReceiptHash } from '../receipt/chain.js';
 
 /**
  * In-memory receipt chain for testing and local development.
  * Production uses Durable Objects for persistence.
  */
-export class MemoryReceiptChain {
+export class MemoryReceiptChain implements ReceiptChain {
   private receipts: GovernanceReceipt[] = [];
   private headHash: string = '';
 
