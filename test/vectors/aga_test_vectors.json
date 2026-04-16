@@ -3,7 +3,6 @@
   "_version": "2.0",
   "_date": "2026-03-18",
   "_owner": "Attested Intelligence Holdings LLC",
-  "_patent": "USPTO App. No. 19/433,835",
   "_encoding": "4-byte big-endian length prefix per field, SHA-256, raw bytes for hashes",
   "_verified": "All vectors independently computed and verified 2026-03-18",
 

@@ -1,6 +1,5 @@
 // AGA MCP Gateway - Cryptographic Governance Receipts
 // Reference implementation for MCP SEP-XXXX
-// Patent: USPTO App. No. 19/433,835
 // Copyright (c) 2026 Attested Intelligence Holdings LLC
 // SPDX-License-Identifier: Apache-2.0
 
@@ -121,23 +120,55 @@ async function handleHealth(env: Env): Promise<Response> {
   });
 }
 
+/** Security and CORS headers applied to every response. */
+const securityHeaders: Record<string, string> = {
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+function withHeaders(response: Response): Response {
+  const patched = new Response(response.body, response);
+  for (const [k, v] of Object.entries(securityHeaders)) {
+    patched.headers.set(k, v);
+  }
+  return patched;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: securityHeaders });
+    }
+
     const url = new URL(request.url);
 
+    let response: Response;
     switch (url.pathname) {
       case '/mcp':
-        return handleMCPRequest(request, await buildConfig(env));
+        response = await handleMCPRequest(request, await buildConfig(env));
+        break;
       case '/receipts':
-        return handleGetReceipts(env);
+        response = await handleGetReceipts(env);
+        break;
       case '/bundle':
-        return handleGetBundle(env);
+        response = await handleGetBundle(env);
+        break;
       case '/verify':
-        return handleVerify(request);
+        response = await handleVerify(request);
+        break;
       case '/health':
-        return handleHealth(env);
+        response = await handleHealth(env);
+        break;
       default:
-        return new Response('Not Found', { status: 404 });
+        response = new Response('Not Found', { status: 404 });
     }
+
+    return withHeaders(response);
   },
 };

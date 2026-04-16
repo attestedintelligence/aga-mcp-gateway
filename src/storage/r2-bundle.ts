@@ -1,6 +1,5 @@
 // AGA MCP Gateway - R2 Evidence Bundle Storage
 // Reference implementation for MCP SEP-XXXX
-// Patent: USPTO App. No. 19/433,835
 // Copyright (c) 2026 Attested Intelligence Holdings LLC
 // SPDX-License-Identifier: Apache-2.0
 
